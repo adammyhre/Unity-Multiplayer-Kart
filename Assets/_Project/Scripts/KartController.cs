@@ -1,4 +1,7 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
+using Cinemachine;
+using Unity.Netcode;
 using UnityEngine;
 using Utilities;
 
@@ -12,8 +15,35 @@ namespace Kart {
         public WheelFrictionCurve originalForwardFriction;
         public WheelFrictionCurve originalSidewaysFriction;
     }
+    
+    // Network variables should be value objects
+    public struct InputPayload : INetworkSerializable {
+        public int tick;
+        public Vector3 inputVector;
+        
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter {
+            serializer.SerializeValue(ref tick);
+            serializer.SerializeValue(ref inputVector);
+        }
+    }
 
-    public class KartController : MonoBehaviour {
+    public struct StatePayload : INetworkSerializable {
+        public int tick;
+        public Vector3 position;
+        public Quaternion rotation;
+        public Vector3 velocity;
+        public Vector3 angularVelocity;
+        
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter {
+            serializer.SerializeValue(ref tick);
+            serializer.SerializeValue(ref position);
+            serializer.SerializeValue(ref rotation);
+            serializer.SerializeValue(ref velocity);
+            serializer.SerializeValue(ref angularVelocity);
+        }
+    }
+
+    public class KartController : NetworkBehaviour {
         [Header("Axle Information")]
         [SerializeField] AxleInfo[] axleInfos;
 
@@ -44,6 +74,8 @@ namespace Kart {
         [SerializeField] InputReader playerInput;
         [SerializeField] Circuit circuit;
         [SerializeField] AIDriverData driverData;
+        [SerializeField] CinemachineVirtualCamera playerCamera;
+        [SerializeField] AudioListener playerAudioListener;
         
         IDrive input;
         Rigidbody rb;
@@ -61,19 +93,33 @@ namespace Kart {
         public bool IsGrounded = true;
         public Vector3 Velocity => kartVelocity;
         public float MaxSpeed => maxSpeed;
+        
+        // Netcode general
+        NetworkTimer timer;
+        const float k_serverTickRate = 60f; // 60 FPS
+        const int k_bufferSize = 1024;
+        
+        // Netcode client specific
+        CircularBuffer<StatePayload> clientStateBuffer;
+        CircularBuffer<InputPayload> clientInputBuffer;
+        StatePayload lastServerState;
+        StatePayload lastProcessedState;
+        
+        // Netcode server specific
+        CircularBuffer<StatePayload> serverStateBuffer;
+        Queue<InputPayload> serverInputQueue;
+        
+        [Header("Netcode")]
+        [SerializeField] float reconciliationThreshold = 10f;
+        [SerializeField] GameObject serverCube;
+        [SerializeField] GameObject clientCube;
 
         void Awake() {
             if (playerInput is IDrive driveInput) {
                 input = driveInput;
             }
-        }
-        
-        public void SetInput(IDrive input) {
-            this.input = input;
-        }
-        
-        void Start() {
-            rb = GetComponent<Rigidbody>();
+            
+            rb = GetComponent<Rigidbody>(); 
             input.Enable();
             
             rb.centerOfMass = centerOfMass.localPosition;
@@ -83,9 +129,173 @@ namespace Kart {
                 axleInfo.originalForwardFriction = axleInfo.leftWheel.forwardFriction;
                 axleInfo.originalSidewaysFriction = axleInfo.leftWheel.sidewaysFriction;
             }
+            
+            timer = new NetworkTimer(k_serverTickRate);
+            clientStateBuffer = new CircularBuffer<StatePayload>(k_bufferSize);
+            clientInputBuffer = new CircularBuffer<InputPayload>(k_bufferSize);
+            
+            serverStateBuffer = new CircularBuffer<StatePayload>(k_bufferSize);
+            serverInputQueue = new Queue<InputPayload>();
+        }
+        
+        public void SetInput(IDrive input) {
+            this.input = input;
+        }
+        
+        public override void OnNetworkSpawn() {
+            if (!IsOwner) {
+                playerAudioListener.enabled = false;
+                playerCamera.Priority = 0;
+                return;
+            }
+            
+            playerCamera.Priority = 100;
+            playerAudioListener.enabled = true;
+        }
+
+        void Update() {
+            timer.Update(Time.deltaTime);
+            if (Input.GetKeyDown(KeyCode.Q)) {
+                transform.position += transform.forward * 20f;
+            }
         }
 
         void FixedUpdate() {
+            if (!IsOwner) return;
+
+            while (timer.ShouldTick()) {
+                HandleClientTick();
+                HandleServerTick();
+            }
+        }
+
+        void HandleServerTick() {
+            var bufferIndex = -1;
+            while (serverInputQueue.Count > 0) {
+                InputPayload inputPayload = serverInputQueue.Dequeue();
+                
+                bufferIndex = inputPayload.tick % k_bufferSize;
+                
+                var previousBufferIndex = bufferIndex - 1;
+                if (previousBufferIndex < 0) previousBufferIndex = k_bufferSize - 1;
+                
+                StatePayload statePayload = SimulateMovement(inputPayload);
+                serverStateBuffer.Add(statePayload, bufferIndex);
+            }
+            
+            if (bufferIndex == -1) return;
+            SendToClientRpc(serverStateBuffer.Get(bufferIndex));
+        }
+
+        StatePayload SimulateMovement(InputPayload inputPayload) {
+            Physics.simulationMode = SimulationMode.Script;
+            
+            Move(inputPayload.inputVector);
+            Physics.Simulate(Time.fixedDeltaTime);
+            Physics.simulationMode = SimulationMode.FixedUpdate;
+            
+            return new StatePayload() {
+                tick = inputPayload.tick,
+                position = transform.position,
+                rotation = transform.rotation,
+                velocity = rb.velocity,
+                angularVelocity = rb.angularVelocity
+            };
+        }
+
+        [ClientRpc]
+        void SendToClientRpc(StatePayload statePayload) {
+            if (!IsOwner) return;
+            lastServerState = statePayload;
+        }
+
+        void HandleClientTick() {
+            if (!IsClient) return;
+
+            var currentTick = timer.CurrentTick;
+            var bufferIndex = currentTick % k_bufferSize;
+            
+            InputPayload inputPayload = new InputPayload() {
+                tick = currentTick,
+                inputVector = input.Move
+            };
+            
+            clientInputBuffer.Add(inputPayload, bufferIndex);
+            SendToServerRpc(inputPayload);
+            
+            StatePayload statePayload = ProcessMovement(inputPayload);
+            clientStateBuffer.Add(statePayload, bufferIndex);
+            
+            HandleServerReconciliation();
+        }
+
+        bool ShouldReconcile() {
+            bool isNewServerState = !lastServerState.Equals(default);
+            bool isLastStateUndefinedOrDifferent = lastProcessedState.Equals(default) 
+                                                   || !lastProcessedState.Equals(lastServerState);
+            
+            return isNewServerState && isLastStateUndefinedOrDifferent;
+        }
+
+        void HandleServerReconciliation() {
+            if (!ShouldReconcile()) return;
+
+            float positionError;
+            int bufferIndex;
+            StatePayload rewindState = default;
+            
+            bufferIndex = lastServerState.tick % k_bufferSize;
+            if (bufferIndex - 1 < 0) return; // Not enough information to reconcile
+            
+            rewindState = IsHost ? serverStateBuffer.Get(bufferIndex - 1) : lastServerState; // Host RPCs execute immediately, so we can use the last server state
+            positionError = Vector3.Distance(rewindState.position, clientStateBuffer.Get(bufferIndex).position);
+
+            if (positionError > reconciliationThreshold) {
+                ReconcileState(rewindState);
+            }
+
+            lastProcessedState = lastServerState;
+        }
+
+        void ReconcileState(StatePayload rewindState) {
+            transform.position = rewindState.position;
+            transform.rotation = rewindState.rotation;
+            rb.velocity = rewindState.velocity;
+            rb.angularVelocity = rewindState.angularVelocity;
+
+            if (!rewindState.Equals(lastServerState)) return;
+            
+            clientStateBuffer.Add(rewindState, rewindState.tick);
+            
+            // Replay all inputs from the rewind state to the current state
+            int tickToReplay = lastServerState.tick;
+
+            while (tickToReplay < timer.CurrentTick) {
+                int bufferIndex = tickToReplay % k_bufferSize;
+                StatePayload statePayload = ProcessMovement(clientInputBuffer.Get(bufferIndex));
+                clientStateBuffer.Add(statePayload, bufferIndex);
+                tickToReplay++;
+            }
+        }
+        
+        [ServerRpc]
+        void SendToServerRpc(InputPayload input) {
+            serverInputQueue.Enqueue(input);
+        }
+
+        StatePayload ProcessMovement(InputPayload input) {
+            Move(input.inputVector);
+            
+            return new StatePayload() {
+                tick = input.tick,
+                position = transform.position,
+                rotation = transform.rotation,
+                velocity = rb.velocity,
+                angularVelocity = rb.angularVelocity
+            };
+        }
+
+        void Move(Vector2 inputVector) {
             float verticalInput = AdjustInput(input.Move.y);
             float horizontalInput = AdjustInput(input.Move.x);
             
@@ -108,21 +318,23 @@ namespace Kart {
             // Turn logic
             if (Mathf.Abs(verticalInput) > 0.1f || Mathf.Abs(kartVelocity.z) > 1) {
                 float turnMultiplier = Mathf.Clamp01(turnCurve.Evaluate(kartVelocity.magnitude / maxSpeed));
-                rb.AddTorque(Vector3.up * horizontalInput * Mathf.Sign(kartVelocity.z) * turnStrength * 100f * turnMultiplier);
+                rb.AddTorque(Vector3.up * (horizontalInput * Mathf.Sign(kartVelocity.z) * turnStrength * 100f * turnMultiplier));
             }
             
             // Acceleration Logic
             if (!input.IsBraking) {
                 float targetSpeed = verticalInput * maxSpeed;
                 Vector3 forwardWithoutY = transform.forward.With(y: 0).normalized;
-                rb.velocity = Vector3.Lerp(rb.velocity, forwardWithoutY * targetSpeed, Time.deltaTime);
+                float latencyFactor = IsHost ? 0.4f : 0.05f;
+                float lerpFraction = timer.MinTimeBetweenTicks / (latencyFactor / Time.deltaTime);  
+                rb.velocity = Vector3.Lerp(rb.velocity, forwardWithoutY * targetSpeed, lerpFraction);
             }
             
             // Downforce - always push the cart down, using lateral Gs to scale the force if the Kart is moving sideways fast
             float speedFactor = Mathf.Clamp01(rb.velocity.magnitude / maxSpeed);
             float lateralG = Mathf.Abs(Vector3.Dot(rb.velocity, transform.right));
             float downForceFactor = Mathf.Max(speedFactor, lateralG / lateralGScale);
-            rb.AddForce(-transform.up * downForce * rb.mass * downForceFactor);
+            rb.AddForce(-transform.up * (downForce * rb.mass * downForceFactor));
             
             // Shift Center of Mass
             float speed = rb.velocity.magnitude;

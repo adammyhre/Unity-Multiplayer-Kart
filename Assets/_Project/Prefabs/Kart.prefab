@@ -120,6 +120,7 @@ GameObject:
   - component: {fileID: 3075881851911123317}
   - component: {fileID: 4582105545329751829}
   - component: {fileID: 1970245165105639441}
+  - component: {fileID: 362723239280827317}
   m_Layer: 0
   m_Name: Kart
   m_TagString: Untagged
@@ -204,8 +205,15 @@ MonoBehaviour:
   lateralGScale: 10
   maxBankAngle: 5
   bankSpeed: 2
-  input: {fileID: 11400000, guid: c1df1815bb848164dab289706511cf3f, type: 2}
+  playerInput: {fileID: 0}
+  circuit: {fileID: 0}
+  driverData: {fileID: 0}
+  playerCamera: {fileID: 0}
+  playerAudioListener: {fileID: 0}
   IsGrounded: 1
+  reconciliationThreshold: 10
+  serverCube: {fileID: 0}
+  clientCube: {fileID: 0}
 --- !u!54 &3075881851911123317
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -269,6 +277,25 @@ MonoBehaviour:
   slipThreshold: 0.4
   skidMarkPrefab: {fileID: 3034559999754878407, guid: aae8a14600f73fc4599692116616fca5,
     type: 3}
+--- !u!114 &362723239280827317
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3618581311469605271}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 951099334
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!1 &5776425836732490452
 GameObject:
   m_ObjectHideFlags: 0
