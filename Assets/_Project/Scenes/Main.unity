@@ -818,7 +818,7 @@ MonoBehaviour:
     Port: 7777
     ServerListenAddress: 127.0.0.1
   DebugSimulator:
-    PacketDelayMS: 0
+    PacketDelayMS: 400
     PacketJitterMS: 0
     PacketDropRate: 0
 --- !u!114 &1913621601
@@ -841,8 +841,7 @@ MonoBehaviour:
     PlayerPrefab: {fileID: 1768694830298604044, guid: ffae1099b2780c3499ec938aa0a032d1,
       type: 3}
     Prefabs:
-      NetworkPrefabsLists:
-      - {fileID: 11400000, guid: 26085704c2a970c48b61118e593e57fc, type: 2}
+      NetworkPrefabsLists: []
     TickRate: 30
     ClientConnectionBufferTimeout: 10
     ConnectionApproval: 0
