@@ -351,7 +351,7 @@ namespace Kart {
 
             if (!rewindState.Equals(lastServerState)) return;
             
-            clientStateBuffer.Add(rewindState, rewindState.tick);
+            clientStateBuffer.Add(rewindState, rewindState.tick % k_bufferSize);
             
             // Replay all inputs from the rewind state to the current state
             int tickToReplay = lastServerState.tick;
