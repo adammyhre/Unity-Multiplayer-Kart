@@ -327,13 +327,13 @@ namespace Kart {
 
             float positionError;
             int bufferIndex;
-            StatePayload rewindState = default;
             
             bufferIndex = lastServerState.tick % k_bufferSize;
             if (bufferIndex - 1 < 0) return; // Not enough information to reconcile
             
-            rewindState = IsHost ? serverStateBuffer.Get(bufferIndex - 1) : lastServerState; // Host RPCs execute immediately, so we can use the last server state
-            positionError = Vector3.Distance(rewindState.position, clientStateBuffer.Get(bufferIndex).position);
+            StatePayload rewindState = IsHost ? serverStateBuffer.Get(bufferIndex - 1) : lastServerState; // Host RPCs execute immediately, so we can use the last server state
+            StatePayload clientState = IsHost ? clientStateBuffer.Get(bufferIndex - 1) : clientStateBuffer.Get(bufferIndex);
+            positionError = Vector3.Distance(rewindState.position, clientState.position);
 
             if (positionError > reconciliationThreshold) {
                 ReconcileState(rewindState);
