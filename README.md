@@ -10,15 +10,17 @@ To efficiently use this repository, ensure the following dependencies are instal
 
 - Netcode for GameObjects - com.unity.netcode.gameobjects
 - Multiplayer Tools Package - com.unity.multiplayer.tools
+- Multiplayer Play Mode - com.unity.multiplayer.playmode
 - NEW Unity Input System - com.unity.inputsystem
 - Cinemachine - com.unity.cinemachine
 - TextMesh Pro - com.unity.textmeshpro
 - ProBuilder - com.unity.probuilder
 - [DOTween (Free Version)](https://assetstore.unity.com/packages/tools/animation/dotween-hotween-v2-27676)
+- [SceneReference](https://github.com/starikcetin/Eflatun.SceneReference)
 
 ## Installation
 
-This project was developed in Unity 2022.3 URP.
+This project was developed in Unity 2023.2 URP.
 
 To dive into the Multiplayer Kart Racer game development series, initiate your own URP project in Unity and folow along with the tutorial videos. This repository stands as a reference for those who find themselves in a fix or identify discrepancies in the video recordings. After setting up your project, don't forget to install the dependencies highlighted above.
 
