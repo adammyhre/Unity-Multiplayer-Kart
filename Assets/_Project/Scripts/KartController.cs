@@ -241,6 +241,23 @@ namespace Kart {
                 inputPayload = serverInputQueue.Dequeue();
                 
                 bufferIndex = inputPayload.tick % k_bufferSize;
+
+                if (IsHost) //If we dont check if its host then we will have double input from host. I mean host will move twice faster then he should
+                {
+                    StatePayload statePayload = new StatePayload()
+                    {
+                        tick = inputPayload.tick,
+                        networkObjectId = NetworkObjectId,
+                        position = transform.position,
+                        rotation = transform.rotation,
+                        velocity = rb.velocity,
+                        angularVelocity = rb.angularVelocity,
+                        ping = ping
+                    };
+                    serverStateBuffer.Add(statePayload, bufferIndex);
+                    SendToClientRpc(statePayload);
+                    continue;
+                }
                 
                 StatePayload statePayload = ProcessMovement(inputPayload);
                 serverStateBuffer.Add(statePayload, bufferIndex);
