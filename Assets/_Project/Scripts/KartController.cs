@@ -252,7 +252,6 @@ namespace Kart {
                         rotation = transform.rotation,
                         velocity = rb.velocity,
                         angularVelocity = rb.angularVelocity,
-                        ping = ping
                     };
                     serverStateBuffer.Add(statePayload, bufferIndex);
                     SendToClientRpc(statePayload);
