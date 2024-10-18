@@ -60,6 +60,12 @@ namespace Kart {
             };
         }
 
+        private void Update()
+        {
+            heartbeatTimer.Tick(Time.deltaTime); //If we dont add these lines lobby will not be visible in 30s(by default)
+            pollForUpdatesTimer.Tick(Time.deltaTime);
+        }
+
         async Task Authenticate() {
             await Authenticate("Player" + Random.Range(0, 1000));
         }
